@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -17,13 +18,14 @@ import (
 )
 
 const (
-	VERSION = "yinc version 0.1.0"
+	VERSION = "yinc version 0.2.1"
 )
 
 var CLI struct {
 	IndentWidth          int              `help:"Indent width." short:"w" default:"2"`
 	OutputMultiDocuments bool             `help:"Output multiple documents." short:"m"`
-	Tag                  string           `help:"Specify include tag." short:"t" default:"!include"`
+	IncludeTag           string           `help:"Specify include tag." default:"!include"`
+	ReplaceTag           string           `help:"Specify replace tag." default:"!replace"`
 	Version              kong.VersionFlag `help:"Show version." short:"V"`
 	Files                []string         `help:"Files to process." arg:"" type:"path" optional:""`
 }
@@ -61,9 +63,10 @@ type LineElements struct {
 	}
 }
 
-func NewLine(tag string) *LineElements {
+func NewLine(includeTag string, replaceTag string) *LineElements {
+	tags := strings.Replace(fmt.Sprintf("(%s|%s)", includeTag, replaceTag), "!", "\\!", -1)
 	l := &LineElements{}
-	l.pattern = regexp.MustCompile(`^(?P<indent>\s*)((?P<text>[^\s#]+)\s+)?(?<tag>` + strings.Replace(tag, "!", `\!`, -1) + `)\s+(?P<spec>.+)$`)
+	l.pattern = regexp.MustCompile(`^(?P<indent>\s*)((?P<text>[^\s#]+)\s+)?(?<tag>` + tags + `)\s+(?P<spec>.+)$`)
 	return l
 }
 
@@ -188,7 +191,7 @@ func (s *SourceStream) Process() {
 	if s.cdir != nil {
 		defer s.cdir.Return()
 	}
-	lineElements := NewLine(CLI.Tag)
+	lineElements := NewLine(CLI.IncludeTag, CLI.ReplaceTag)
 	for {
 		line, _, err := bufReader.ReadLine()
 		if err == io.EOF {
@@ -198,15 +201,13 @@ func (s *SourceStream) Process() {
 			panic(err)
 		}
 		if lineElements.Match(line) {
-			if lineElements.submatch.text != "" {
+			var firstIndent string
+			newIndent := string(s.Indent) + lineElements.submatch.indent
+			if lineElements.submatch.text != "" && lineElements.submatch.tag == CLI.IncludeTag {
 				s.WriteIndent([]byte(lineElements.submatch.indent + lineElements.submatch.text))
 				if lineElements.submatch.text != "-" {
 					s.Writer.Write([]byte("\n"))
 				}
-			}
-			var firstIndent string
-			newIndent := string(s.Indent) + lineElements.submatch.indent
-			if lineElements.submatch.text != "" {
 				newIndent += strings.Repeat(" ", CLI.IndentWidth)
 				if lineElements.submatch.text == "-" {
 					firstIndent = " "
