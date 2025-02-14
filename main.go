@@ -14,11 +14,12 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/ghodss/yaml"
 )
 
 const (
-	VERSION = "yinc version 0.2.1"
+	VERSION = "yinc version 0.3.0"
 )
 
 var CLI struct {
@@ -201,20 +202,27 @@ func (s *SourceStream) Process() {
 			panic(err)
 		}
 		if lineElements.Match(line) {
-			var firstIndent string
 			newIndent := string(s.Indent) + lineElements.submatch.indent
-			if lineElements.submatch.text != "" && lineElements.submatch.tag == CLI.IncludeTag {
-				s.WriteIndent([]byte(lineElements.submatch.indent + lineElements.submatch.text))
-				if lineElements.submatch.text != "-" {
-					s.Writer.Write([]byte("\n"))
-				}
-				newIndent += strings.Repeat(" ", CLI.IndentWidth)
-				if lineElements.submatch.text == "-" {
-					firstIndent = " "
-				}
+			files, err := doublestar.FilepathGlob(lineElements.submatch.spec)
+			if err != nil {
+				panic(err)
 			}
-			sub := s.SubStream(lineElements.submatch.spec, newIndent, firstIndent)
-			sub.Process()
+			for _, file := range files {
+				var firstIndent string
+				var indent = string(newIndent)
+				if lineElements.submatch.text != "" && lineElements.submatch.tag == CLI.IncludeTag {
+					s.WriteIndent([]byte(lineElements.submatch.indent + lineElements.submatch.text))
+					if lineElements.submatch.text != "-" {
+						s.Writer.Write([]byte("\n"))
+					}
+					indent += strings.Repeat(" ", CLI.IndentWidth)
+					if lineElements.submatch.text == "-" {
+						firstIndent = " "
+					}
+				}
+				sub := s.SubStream(file, indent, firstIndent)
+				sub.Process()
+			}
 		} else {
 			s.WriteIndent(line, []byte("\n"))
 		}
