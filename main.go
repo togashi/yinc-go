@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	VERSION = "yinc version 0.3.0"
+	VERSION = "yinc version 0.3.1"
 )
 
 var CLI struct {
@@ -158,7 +158,7 @@ func (s *SourceStream) getReader() io.Reader {
 		}
 		s.Spec = ""
 		return bytes.NewReader(output)
-	} else if strings.HasPrefix(s.Spec, "$(json ") || strings.HasPrefix(s.Spec, ")") {
+	} else if (strings.HasPrefix(s.Spec, "$(json ") && strings.HasSuffix(s.Spec, ")")) || strings.HasSuffix(s.Spec, ".json") {
 		jsonfile := strings.TrimPrefix(s.Spec, "$(json ")
 		jsonfile = strings.TrimSuffix(jsonfile, ")")
 		jsonBytes, err := os.ReadFile(jsonfile)
@@ -187,6 +187,21 @@ func (s *SourceStream) getReader() io.Reader {
 	}
 }
 
+func expandSpec(spec string) []string {
+	if strings.HasPrefix(spec, "$(shell ") && strings.HasSuffix(spec, ")") {
+		return []string{spec}
+	} else if strings.HasPrefix(spec, "$(json ") && strings.HasSuffix(spec, ")") {
+		return []string{spec}
+	} else if strings.HasPrefix(spec, "http://") || strings.HasPrefix(spec, "https://") {
+		return []string{spec}
+	}
+	files, err := doublestar.FilepathGlob(spec)
+	if err != nil {
+		panic(err)
+	}
+	return files
+}
+
 func (s *SourceStream) Process() {
 	bufReader := bufio.NewReaderSize(s.getReader(), 4096)
 	if s.cdir != nil {
@@ -203,10 +218,7 @@ func (s *SourceStream) Process() {
 		}
 		if lineElements.Match(line) {
 			newIndent := string(s.Indent) + lineElements.submatch.indent
-			files, err := doublestar.FilepathGlob(lineElements.submatch.spec)
-			if err != nil {
-				panic(err)
-			}
+			files := expandSpec(lineElements.submatch.spec)
 			for _, file := range files {
 				var firstIndent string
 				var indent = string(newIndent)
